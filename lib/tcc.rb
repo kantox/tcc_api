@@ -106,13 +106,14 @@ module TCC
     end
 
     def multiple_quotes(pairs)
-      Price.new(get('/v2/rates/find',{currency_pair: pairs}))
+      r = get('/v2/rates/find',{currency_pair: pairs})
+      r
     end
-    alias_method :prices_market, :multiple_quotes
+     alias_method :prices_market, :multiple_quotes
 
     def detailed_quote(options)
       r = get('/v2/rates/detailed', options)
-      r
+      Price.new(r)
     end
 
     def create_conversion(options)
