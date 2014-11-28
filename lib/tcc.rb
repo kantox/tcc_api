@@ -48,7 +48,7 @@ module TCC
       puts "===============API_KEY===============: #{self.api_key}"
       self.login_id = login_id
 
-      response = conn.post '/v2/authenticate/api', { :api_key => api_key, :login_id => login_id }
+      response = conn.post '/v2/authenticate/api', { :api_key => self.api_key, :login_id => login_id }
       json = JSON.parse(response.body)
       if json.has_key?("auth_token")
         self.token = json["auth_token"]
