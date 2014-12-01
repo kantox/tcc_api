@@ -96,10 +96,39 @@ module TCC
   end
 
   class Price < Hashie::Mash
+    def self.to_v1(result_v2)
+      settlement = DateTime.parse(result_v2["settlement_cut_off_time"])
+      result ={ "settlement_time"     => settlement.strftime('%d %B %Y'),
+                "settlement_date"     => settlement.strftime('@ %H:%M (%z)'),
+                 "delivery_date"      => settlement.strftime('%d %B %Y'),  
+                 "deposit_amount"     => result_v2["deposit_amount"],
+                 "fxc_market_rate"    => result_v2["mid_market_rate"],
+                 "fxc_market_inverse" => (1/result_v2["mid_market_rate"]).round(4), #review: seems v2 returns oposite market and inverse semantically speaking
+                 "quote_ref"          => "", #???
+                 "side"               => result_v2["fixed_side"],
+                 "ccy_pair"           => result_v2["currency_pair"],
+                 "ccy_pair_inverse"   => "#{result_v2["currency_pair"][3..5]}#{result_v2["currency_pair"][0..2]}",#review
+                 "your_rate"          => result_v2["core_rate"], #review: quore_rate or client_rate?
+                 "your_rate_inverse"  => (1/result_v2["core_rate"]).round(4),#review: quore_rate or client_rate?
+                 "real_market"        => "",
+                 "real_market_inverse"=> "",
+                 "display_inverse"    => false,
+                 "sell_currency"      => result_v2["client_sell_currency"],
+                 "buy_currency"       => result_v2["client_buy_currency"],
+                 "sell_amount"        => result_v2["client_buy_amount"],
+                 "buy_amount"         => result_v2["client_sell_amount"],
+                 "quote_time"         => "",
+                 "quote_date"         => ""
+               }
+        result
+    end
 
   end
 
   class TheCurrencyCloud < TheCurrencyCloudApi
+    def available_currencies()
+      get('/v2/reference/currencies')
+    end
 
     def conversion_dates(pair)
       get('v2/reference/conversion_dates',{conversion_pair: pair})
@@ -113,7 +142,7 @@ module TCC
 
     def detailed_quote(options)
       r = get('/v2/rates/detailed', options)
-      Price.new(r)
+      Price.new(Price.to_v1(r)
     end
 
     def create_conversion(options)
