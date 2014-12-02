@@ -90,6 +90,7 @@ module TCC
     end
 
   end
+
   class Utils
     def self.format_date_and_time(datetime)
       datetime_parsed = DateTime.parse(datetime)
@@ -105,12 +106,102 @@ module TCC
       end
       result
     end
+
     def self.client_currency_pair(client_side, buy_currency, sell_currency)
       if client_side=='buy'
         "#{buy_currency}#{sell_currency}"
       else
         "#{sell_currency}#{buy_currency}"
       end
+    end
+    
+  end
+  class BankAccount < Hashie::Mash
+    def self.to_v2(bank_account)
+      bank_account_v2 = {
+        "bank_account_holder_name" => bank_account["beneficiary_name"],
+        "beneficiary_country"      => bank_account["destination_country_code"],
+        "bank_country"             => "?????", #REVIEW
+        "currency"                 => bank_account["acct_ccy"],
+        "beneficiary_address"      => bank_account["bank_address"],
+        "bank_name"                => bank_account["bank_name"],
+        "bic_swift"                => bank_account["bic_swift"],
+        "iban"                     => bank_account["iban"],
+        "account_number"           => bank_account["acct_number"],
+        "default_beneficiary"      => bank_account["is_beneficiary"],       #REVIEW
+        # "nicname"                => bank_account["nickname"] TODO: Doesn't exists!
+        #"is_source"               => bank_account["is_source"]TODO: Doesn't exists!
+      }
+    end
+
+    def self.beneficiary_name(bank_account)
+      r = if bank_account["beneficiary_entity_type"]== "company",
+        bank_account["beneficiary_company_name"]
+      else
+        "#{bank_account["beneficiary_first_name"]} #{"beneficiary_last_name"}"
+      end
+      r
+    end
+    
+    def self.to_v1(bank_account)
+        "acct_ccy"                 => bank_account["currency"],
+        "acct_number"              => bank_account["account_number"],
+        "bank_address"             => bank_account["beneficiary_address"].join(","), #REVIEW
+        "bank_name"                => bank_account["bank_name"],
+        "beneficiary_id"           => bank_account["id"],
+        "beneficiary_name"         => beneficiary_name(bank_account)
+        "created_at"               => bank_account["created_at"],
+        "destination_country_code" => bank_account["beneficiary_country"],
+        "bank_country"             => "?????", #REVIEW
+        "bic_swift"                => bank_account["bic_swift"],
+        "iban"                     => bank_account["iban"],
+        "is_beneficiary"           => bank_account["default_beneficiary"],       #REVIEW
+        "payment_types"            => bank_account["payment_types"],
+
+        # "nicname"                => bank_account["nickname"] TODO: Doesn't exists!
+        #"is_source"               => bank_account["is_source"]TODO: Doesn't exists!
+    end
+  end
+
+  class Payment < Hashie::Mash
+    def self.to_v2(payment)
+      { "conversion_id"             => payment["trade_id"],
+        "currency"                  => payment["currency"],
+        "amount"                    => payment["amount"],
+        "beneficiary_id"            => payment["beneficiary_id"],
+        "payer_entity_type"         => payment["payer_type"],
+        "payer_company_name"        => payment["payer_company_name"],
+        "payer_first_name"          => payment["payer_first_name"],
+        "payer_last_name"           => payment["payer_last_name"],
+        "payer_city"                => payment["payer_city"], 
+        "payer_postcode"            => payment["payer_postcode"],
+        "payer_state_or_province"   => payment["payer_state_or_province"],
+        "payer_identification_type" => payment["payer_state_or_province"],
+        "payer_identification_value"=> payment["payer_identification_value"],
+        "payer_country"             => payment["payer_country"],
+        "reference"                 => payment["payment_reference"],
+        "reason"                    => payment["reason"]
+      }
+    end
+
+    def self.to_v1
+      { "trade_id"                  => payment["conversion_id"],
+        "currency"                  => payment["currency"],
+        "amount"                    => payment["amount"],
+        "beneficiary_id"            => payment["beneficiary_id"],
+        "payer_type"                => payment["payer_entity_type"],
+        "payer_company_name"        => payment["payer_company_name"],
+        "payer_first_name"          => payment["payer_first_name"],
+        "payer_last_name"           => payment["payer_last_name"],
+        "payer_city"                => payment["payer_city"], 
+        "payer_postcode"            => payment["payer_postcode"],
+        "payer_state_or_province"   => payment["payer_state_or_province"],
+        "payer_identification_type" => payment["payer_state_or_province"],
+        "payer_identification_value"=> payment["payer_identification_value"],
+        "payer_country"             => payment["payer_country"],
+        "payment_reference"         => payment["reference"],
+        "reason"                    => payment["reason"]
+      }
     end
   end
 
@@ -308,6 +399,40 @@ module TCC
 
     def conversion(trade_id)
      Trade.new(Trade.details_to_v1(get("/v2/conversions/#{trade_id}")))
+    end
+
+    def create_bank_account(bank_account)
+      response = post("/v2/beneficiaries/create", BankAccount.to_v2(bank_account))
+      BankAccount.new(BankAccount.to_v1(response))
+    end
+
+    def update_bank_account(id, bank_account)
+      response = post("/v2/beneficiaries/update/#{id}", BankAccount.to_v2(bank_account))
+      BankAccount.new(BankAccount.to_v1(response))
+    end
+
+    def get_beneficiary(id)
+      r = get('/v2/beneficiaries/#{id}')
+      BankAccount.new(BankAccount.to_v1(r))
+
+      def add_payment(payment)
+        r = post('/v2/payments/create',Payment.to_v2(payment))
+        Payment.new(Payment.to_v1(r))
+      end
+
+      def update_payment(id,payment)
+        r = post('/v2/payments/update/#{id}',Payment.to_v2(payment))
+        Payment.new(Payment.to_v1(r))
+      end
+
+      def payments(options)
+        get("/v2/payments/find") #TODO conversion
+      end
+
+      def payment(id)
+        r = get("/v2/payments/#{id}")
+        Payment.new(Payment.to_v1(r))
+      end
     end
 
     ##NOT USED??
