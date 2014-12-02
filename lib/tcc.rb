@@ -83,17 +83,40 @@ module TCC
     def _process_response(response)
       json = JSON.parse(response.body)
       if json.has_key?("error_code") && json["error_messages"]
-        json["error_messages"]
+        raise Excption.new(json["error_messages"])
       else
         json
       end
     end
 
   end
+  class Utils
+    def self.format_date_and_time(datetime)
+      datetime_parsed = DateTime.parse(datetime)
+      [datetime_parsed.strftime('%d %B %Y'), datetime_parsed.strftime('@ %H:%M (%z)')]
+    end
+
+    def self.invert_rate(rate_str,precision=4)
+      rate   = rate_str.to_f
+      result = if rate == 0
+        0
+      else
+        (1/rate).round(precision)
+      end
+      result
+    end
+    def self.client_currency_pair(client_side, buy_currency, sell_currency)
+      if client_side=='buy'
+        "#{buy_currency}#{sell_currency}"
+      else
+        "#{sell_currency}#{buy_currency}"
+      end
+    end
+  end
 
   class Trade < Hashie::Mash
     def self.to_v1(result_v2)
-      result = { "trade_id" => result_v2.short_reference}
+      result = { "trade_id" => result_v2["id"]}
     end
 
     def self.details_to_v1(result_v2)
@@ -157,16 +180,40 @@ module TCC
       #   "payment_ids": ["b934794f-d810-4b4a-b360-5a0f47b7126e"],
       #   "created_at": "2014-01-12T00:00:00+00:00",
       #   "updated_at": "2014-01-12T00:00:00+00:00"}
-      { "trade_id"        => result_v2["id"],
-        "short_reference" => result_v2["short_reference"], #NEW
-        "ccy_pair"        => result_v2["currency_pair"],
-        "client_buy_ccy"  => result_v2["buy_currency"],
-        "client_sell_ccy" => result_v2["sell_currency"],
-        "client_buy_amt"  => result_v2["client_buy_amount"],
-        "client_sell_amt" => result_v2["client_sell_amount"],
-        "side"            => result_v2["fixed_side"],
-        "client_side"     => "TODO"
-        "client_rate"      => result_v2["client_rate"],
+      traded_date, traded_time         = Utils.format_date_and_time(result_v2["conversion_date"])
+      settlement_date, settlement_time = Utils.format_date_and_time(result_v2["settlement_date"])
+      { "trade_id"             => result_v2["id"],
+        "short_reference"      => result_v2["short_reference"],
+        "ccy_pair"             => result_v2["currency_pair"],
+        "client_ccy_pair"      => Utils.client_currency_pair(result_v2["fix_side"],result_v2["buy_currency"],result_v2["sell_currency"]), #REVIEW
+        "client_buy_ccy"       => result_v2["buy_currency"],
+        "client_sell_ccy"      => result_v2["sell_currency"],
+        "client_buy_amt"       => result_v2["client_buy_amount"],
+        "client_sell_amt"      => result_v2["client_sell_amount"],
+        "side"                 => "????",                         
+        "client_side"          => result_v2["fixed_side"], #fix_side is what the client has chosen when trade
+        "client_rate"          => result_v2["client_rate"].to_f,
+        "client_invr"          => Utils.invert_rate(result_v2["client_rate"]),
+        "fxc_market_rate"      => result_v2["partner_rate"].to_f,               #REVIEW
+        "fxc_market_invr"      => Utils.invert_rate(result_v2["partner_rate"]), #REVIEW
+        "traded_at_date"       => traded_date,
+        "traded_at_time"       => traded_time,
+        "settlement_date"      => settlement_date,
+        "settlement_time"      => settlement_time,
+        "delivery_date"        => "????",                                       #TODO 
+        "dealer_id"            => result_v2["creator_contact_id"],              #REVIEW
+        "trading_contact_name" => "????",                                       #TODO
+        "status"               => result_v2["status"],
+        "display_inverse"      => "????",                                       #TODO
+        "deposit_required"     => result_v2["deposit_required"],
+        "mid_market_rate"      => result_v2["mid_market_rate"],
+        "mid_market_invr"      => Utils.invert_rate(result_v2["mid_market_rate"]),
+        "tcc_core_rate"        => result_v2["core_rate"],
+        "tcc_core_rate_invr"   => Utils.invert_rate(result_v2["core_rate"]),
+        "partner_rate"         => result_v2["partner_rate"],
+        "partner_invr"         => Utils.invert_rate(result_v2["partner_rate"]),
+        "deposit_currency"   => result_v2["deposit_currency"],
+        "deposit_amount"     => result_v2["deposit_amount"]
       }
     end
 
@@ -215,9 +262,9 @@ module TCC
       #  "deposit_amount"=>"0.0",
       #  "deposit_currency"=>"EUR"}
 
-      settlement = DateTime.parse(result_v2["settlement_cut_off_time"])
-      result ={ "settlement_time"     => settlement.strftime('%d %B %Y'),
-                "settlement_date"     => settlement.strftime('@ %H:%M (%z)'),
+      settlement_date, settlement_time = Utils.format_date_and_time(DateTime.parse(result_v2["settlement_cut_off_time"]))
+      result ={ "settlement_time"     => settlement_time,
+                "settlement_date"     => settlement_date,
                  "delivery_date"      => settlement.strftime('%d %B %Y'),  
                  "deposit_amount"     => result_v2["deposit_amount"],
                  "fxc_market_rate"    => result_v2["mid_market_rate"],
@@ -260,7 +307,7 @@ module TCC
     alias_method :trade_execute, :create_conversion
 
     def conversion(trade_id)
-     Trade.new(get("/v2/conversions/#{trade_id}"))
+     Trade.new(Trade.details_to_v1(get("/v2/conversions/#{trade_id}")))
     end
 
     ##NOT USED??
